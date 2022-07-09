@@ -1,4 +1,8 @@
 use hyper_tls::HttpsConnector;
+use plotlib::page::Page;
+use plotlib::repr::Plot;
+use plotlib::style::{PointMarker, PointStyle};
+use plotlib::view::ContinuousView;
 use hyper::Client;
 use hyper::body::Buf;
 use serde::{Serialize, Deserialize};
@@ -8,8 +12,12 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    print!("{}[2J", 27 as char);
+    println!("Aslaks VVB App\n\n");
+
     let url = "https://www.nordpoolgroup.com/api/marketdata/page/23?currency=NOK,NOK,EUR,EUR".parse().unwrap();
     let response = fetch_json(url).await?;
+    let mut prices:Vec<Price> = Vec::new();
 
     response.data.rows.iter().filter(|row| match row.name.as_str() {
         "00&nbsp;-&nbsp;01" => true,
@@ -41,20 +49,42 @@ async fn main() -> Result<()> {
         .for_each(|row| row.columns.iter()
               .filter(|column| column.name.eq("Oslo"))
               .for_each(|column| {
-                  let value:f64 = column.value.trim()
+                  let start_time = format!("{}z", row.start_time);
+                  let end_time = format!("{}z", row.end_time);
+                  let value:i32 = column.value.trim()
                       .replace(' ', "")
-                      .replace(',', ".")
+                      .replace(',', "")
                       .parse()
                       .unwrap();
 
-                  let start_time = format!("{}z", row.start_time);
-                  let end_time = format!("{}z", row.end_time);
-                  let from = start_time.parse::<DateTime<Utc>>().unwrap();
-                  let to = end_time.parse::<DateTime<Utc>>().unwrap();
+                  let price = Price {
+                        from: start_time.parse::<DateTime<Utc>>().unwrap(),
+                        to: end_time.parse::<DateTime<Utc>>().unwrap(),
+                        value: value
+                  };
 
-                  println!("{:0>2} - {:0>2}: {}", from.hour(), to.hour(), value)
+                  prices.push(price);
+
               })
         );
+
+
+    let mut data:Vec<(f64, f64)> = Vec::new();
+    // prices.sort_by(|a, b| a.value.cmp(&b.value));
+    let mut i = 0.;
+    prices.iter().for_each(|price| {
+        data.push((i, price.value as f64 / 1000.0));
+        i += 1.;
+        // println!("{:0>2} - {:0>2}: {}", price.from.hour(), price.to.hour(), price.value)
+    });
+
+    let s1 = Plot::new(data).point_style(PointStyle::new().marker(PointMarker::Circle));
+    let v = ContinuousView::new()
+        .add(s1)
+        .x_range(0., 24.)
+        .y_range(0., 200.);
+
+    println!("{}", Page::single(&v).dimensions(80, 30).to_text().unwrap());
 
     Ok(())
 }
@@ -66,6 +96,13 @@ async fn fetch_json(url: hyper::Uri) -> Result<Root> {
     let body = hyper::body::aggregate(res).await?;
 
     Ok(serde_json::from_reader(body.reader())?)
+}
+
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Price {
+    from:DateTime<Utc>,
+    to:DateTime<Utc>,
+    value:i32
 }
 
 #[derive(Serialize, Deserialize, Debug)]
