@@ -7,15 +7,76 @@ use hyper::Client;
 use hyper::body::Buf;
 use serde::{Serialize, Deserialize};
 use chrono::prelude::*;
+use std::time::Duration;
+use tokio_cron_scheduler::{Job, JobScheduler};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    print!("{}[2J", 27 as char);
+async fn main() {
     println!("Aslaks VVB App\n\n");
 
-    let url = "https://www.nordpoolgroup.com/api/marketdata/page/23?currency=NOK,NOK,EUR,EUR".parse().unwrap();
+    let sched = JobScheduler::new().unwrap();
+
+    #[cfg(feature = "signal")]
+    sched.shutdown_on_ctrl_c();
+
+    let get_data_job = sched.add(Job::new_async("1/10 * * * * *", |_uuid, _l| {
+        Box::pin(async move {
+            let prices = get_data().await;
+
+            match prices {
+                Err(e) => println!("{:?}", e),
+                _ => print_graph(prices.unwrap()).await
+            }
+        })
+    }).unwrap());
+
+    if get_data_job.is_err() {
+        println!("Error starting get data job");
+        return;
+    }
+
+    let start = sched.start();
+
+    if start.is_err() {
+        println!("Error starting scheduler");
+        return;
+    }
+
+    loop {}
+}
+
+async fn print_graph(prices: Vec<Price>) {
+    // Clear screen
+    print!("{}[2J", 27 as char);
+
+    let mut prices_clone = prices.clone();
+    prices_clone.sort_by(|a, b| a.value.cmp(&b.value));
+    let lowest = prices_clone[0].value as f64 / 1000.0;
+    prices_clone.sort_by(|a, b| b.value.cmp(&a.value));
+    let highest = prices_clone[0].value as f64 / 1000.0;
+    println!("{} {}", lowest, highest);
+
+    let mut data:Vec<(f64, f64)> = Vec::new();
+    let mut i = 0.;
+    prices.iter().for_each(|price| {
+        data.push((i, price.value as f64 / 1000.0));
+        i += 1.;
+        println!("{:0>2} - {:0>2}: {}", price.from.hour(), price.to.hour(), price.value)
+    });
+
+    let s1 = Plot::new(data).point_style(PointStyle::new().marker(PointMarker::Circle));
+    let v = ContinuousView::new()
+        .add(s1)
+        .x_range(0., 24.)
+        .y_range(lowest - 10., highest + 10.);
+
+    println!("{}", Page::single(&v).dimensions(80, 20).to_text().unwrap());
+}
+
+async fn get_data() -> Result<Vec<Price>> {
+    let url = "https://www.nordpoolgroup.com/api/marketdata/page/23?currency=,,,NOK".parse().unwrap();
     let response = fetch_json(url).await?;
     let mut prices:Vec<Price> = Vec::new();
 
@@ -68,25 +129,7 @@ async fn main() -> Result<()> {
               })
         );
 
-
-    let mut data:Vec<(f64, f64)> = Vec::new();
-    // prices.sort_by(|a, b| a.value.cmp(&b.value));
-    let mut i = 0.;
-    prices.iter().for_each(|price| {
-        data.push((i, price.value as f64 / 1000.0));
-        i += 1.;
-        // println!("{:0>2} - {:0>2}: {}", price.from.hour(), price.to.hour(), price.value)
-    });
-
-    let s1 = Plot::new(data).point_style(PointStyle::new().marker(PointMarker::Circle));
-    let v = ContinuousView::new()
-        .add(s1)
-        .x_range(0., 24.)
-        .y_range(0., 200.);
-
-    println!("{}", Page::single(&v).dimensions(80, 30).to_text().unwrap());
-
-    Ok(())
+    Ok(prices)
 }
 
 async fn fetch_json(url: hyper::Uri) -> Result<Root> {
@@ -98,7 +141,7 @@ async fn fetch_json(url: hyper::Uri) -> Result<Root> {
     Ok(serde_json::from_reader(body.reader())?)
 }
 
-#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd, Clone)]
 struct Price {
     from:DateTime<Utc>,
     to:DateTime<Utc>,
