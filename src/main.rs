@@ -15,16 +15,30 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>
 #[tokio::main]
 async fn main() {
     match Local::now().hour() {
-        0..=12 => println!("Before 13:00"),
-        _ => println!("After 13:00")
+        0..=12 => {
+            println!("Before 13:00");
+        },
+        _ => {
+            println!("After 13:00");
+        }
     }
 
-    // let prices = get_prices(Some(Utc::today())).await;
-    let prices = get_prices(None).await;
-    let prices = approve_lowest_prices(prices.unwrap(), 8);
+    let mut todays_prices = get_prices(Some(Utc::today())).await;
+    let mut todays_prices = approve_lowest_prices(todays_prices.unwrap(), 8);
 
-    println!("{:#?}", prices);
-    // get_prices(None).await;
+    let mut tomorrows_prices = get_prices(None).await;
+    let mut tomorrows_prices = approve_lowest_prices(tomorrows_prices.unwrap(), 8);
+
+    let mut prices: Vec<Price> = Vec::new();
+    prices.append(&mut todays_prices);
+    prices.append(&mut tomorrows_prices);
+
+    let index = get_current_price(prices);
+
+    match index {
+        Some(i) => println!("{}", i),
+        None => println!("Date not found")
+    }
 
     loop {}
 }
@@ -63,6 +77,17 @@ async fn main() {
 //
 //     loop {}
 // }
+
+fn get_current_price(prices: Vec<Price>) -> Option<usize> {
+    let mut now = Local::now();
+
+    prices.into_iter().position(|price| {
+        price.from.year() == now.year() &&
+        price.from.month() == now.month() &&
+        price.from.day() == now.day() &&
+        price.from.hour() == now.hour()
+    })
+}
 
 fn approve_lowest_prices(prices: Vec<Price>, count: usize) -> Vec<Price> {
     let mut approved_prices = prices.clone();
@@ -147,8 +172,8 @@ async fn get_prices(date: Option<Date<Utc>>) -> Result<Vec<Price>> {
         .for_each(|row| row.columns.iter()
             .filter(|column| column.name.eq("Oslo"))
             .for_each(|column| {
-                let start_time = format!("{}z", row.start_time);
-                let end_time = format!("{}z", row.end_time);
+                let start_time = row.start_time.parse().unwrap();
+                let end_time = row.end_time.parse().unwrap();
                 let value:i32 = column.value.trim()
                     .replace(' ', "")
                     .replace(',', "")
@@ -156,8 +181,8 @@ async fn get_prices(date: Option<Date<Utc>>) -> Result<Vec<Price>> {
                     .unwrap();
 
                 let price = Price {
-                    from: start_time.parse::<DateTime<Utc>>().unwrap(),
-                    to: end_time.parse::<DateTime<Utc>>().unwrap(),
+                    from: Local.from_local_datetime(&start_time).unwrap(),
+                    to: Local.from_local_datetime(&end_time).unwrap(),
                     value: value,
                     approved: false
                 };
@@ -180,8 +205,8 @@ async fn fetch_json(url: hyper::Uri) -> Result<Root> {
 
 #[derive(Debug, Eq, Ord, PartialEq, PartialOrd, Clone)]
 struct Price {
-    from:DateTime<Utc>,
-    to:DateTime<Utc>,
+    from:DateTime<Local>,
+    to:DateTime<Local>,
     value:i32,
     approved:bool
 }
