@@ -7,81 +7,60 @@ use hyper::Client;
 use hyper::body::Buf;
 use serde::{Serialize, Deserialize};
 use chrono::prelude::*;
-use std::time::Duration;
 use tokio_cron_scheduler::{Job, JobScheduler};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 #[tokio::main]
 async fn main() {
-    match Local::now().hour() {
-        0..=12 => {
-            println!("Before 13:00");
-        },
-        _ => {
-            println!("After 13:00");
-        }
+    println!("Aslaks VVB App\n\n");
+
+    let sched = JobScheduler::new().unwrap();
+
+    #[cfg(feature = "signal")]
+    sched.shutdown_on_ctrl_c();
+
+    let get_prices_job = sched.add(Job::new_async("1/10 * * * * *", |_uuid, _l| {
+        Box::pin(async move {
+            let prices = get_prices(Some(Local::today())).await;
+            let prices = approve_lowest_prices(prices.unwrap(), 8);
+
+            let price = get_current_price(&prices);
+
+            match price {
+                Some(price) => {
+                    toggle_switch(price.approved).await;
+                },
+                None => println!("Could not find {} in prices", Local::today())
+            }
+
+            print_graph(prices);
+        })
+    }).unwrap());
+
+    if get_prices_job.is_err() {
+        println!("Error starting get data job");
+        return;
     }
 
-    let mut todays_prices = get_prices(Some(Utc::today())).await;
-    let mut todays_prices = approve_lowest_prices(todays_prices.unwrap(), 8);
+    let start = sched.start();
 
-    let mut tomorrows_prices = get_prices(None).await;
-    let mut tomorrows_prices = approve_lowest_prices(tomorrows_prices.unwrap(), 8);
-
-    let mut prices: Vec<Price> = Vec::new();
-    prices.append(&mut todays_prices);
-    prices.append(&mut tomorrows_prices);
-
-    let index = get_current_price(prices);
-
-    match index {
-        Some(i) => println!("{}", i),
-        None => println!("Date not found")
+    if start.is_err() {
+        println!("Error starting scheduler");
+        return;
     }
 
     loop {}
 }
 
-// #[tokio::main]
-// async fn main() {
-//     println!("Aslaks VVB App\n\n");
-//
-//     let sched = JobScheduler::new().unwrap();
-//
-//     #[cfg(feature = "signal")]
-//     sched.shutdown_on_ctrl_c();
-//
-//     let get_prices_job = sched.add(Job::new_async("1/10 * * * * *", |_uuid, _l| {
-//         Box::pin(async move {
-//             let prices = get_prices().await;
-//
-//             match prices {
-//                 Err(e) => println!("{:?}", e),
-//                 _ => print_graph(prices.unwrap()).await
-//             }
-//         })
-//     }).unwrap());
-//
-//     if get_prices_job.is_err() {
-//         println!("Error starting get data job");
-//         return;
-//     }
-//
-//     let start = sched.start();
-//
-//     if start.is_err() {
-//         println!("Error starting scheduler");
-//         return;
-//     }
-//
-//     loop {}
-// }
+async fn toggle_switch(on: bool) {
+    println!("Setting switch to {}", on);
+}
 
-fn get_current_price(prices: Vec<Price>) -> Option<usize> {
-    let mut now = Local::now();
+fn get_current_price(prices: &Vec<Price>) -> Option<&Price> {
+    let now = Local::now();
 
-    prices.into_iter().position(|price| {
+    prices.into_iter().find(|&price| {
         price.from.year() == now.year() &&
         price.from.month() == now.month() &&
         price.from.day() == now.day() &&
@@ -101,7 +80,7 @@ fn approve_lowest_prices(prices: Vec<Price>, count: usize) -> Vec<Price> {
     approved_prices
 }
 
-async fn print_graph(prices: Vec<Price>) {
+fn print_graph(prices: Vec<Price>) {
     // Clear screen
     print!("{}[2J", 27 as char);
 
@@ -110,15 +89,12 @@ async fn print_graph(prices: Vec<Price>) {
     let lowest = prices_clone[0].value as f64 / 1000.0;
     prices_clone.sort_by(|a, b| b.value.cmp(&a.value));
     let highest = prices_clone[0].value as f64 / 1000.0;
-    println!("{} {}", lowest, highest);
 
     let mut data:Vec<(f64, f64)> = Vec::new();
     let mut i = 0.;
     prices.iter().for_each(|price| {
         data.push((i, price.value as f64 / 1000.0));
         i += 1.;
-        // println!("{:0>2} - {:0>2}: {}", price.from.hour(), price.to.hour(), price.value)
-        println!("{:#?} - {:#?}: {}", price.from, price.to, price.value)
     });
 
     let s1 = Plot::new(data).point_style(PointStyle::new().marker(PointMarker::Circle));
@@ -130,7 +106,7 @@ async fn print_graph(prices: Vec<Price>) {
     println!("{}", Page::single(&v).dimensions(80, 20).to_text().unwrap());
 }
 
-async fn get_prices(date: Option<Date<Utc>>) -> Result<Vec<Price>> {
+async fn get_prices(date: Option<Date<Local>>) -> Result<Vec<Price>> {
     let mut url = String::from("https://www.nordpoolgroup.com/api/marketdata/page/23?currency=,,,NOK");
 
     match date {
