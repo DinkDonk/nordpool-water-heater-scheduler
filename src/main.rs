@@ -11,46 +11,48 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-#[tokio::main]
-async fn main() {
-    println!("Aslaks VVB App\n\n");
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd, Clone)]
+struct Price {
+    from:DateTime<Local>,
+    to:DateTime<Local>,
+    value:i32,
+    approved:bool
+}
 
-    let sched = JobScheduler::new().unwrap();
+#[derive(Serialize, Deserialize, Debug)]
+struct Root {
+    #[serde(rename="cacheKey")]
+    cache_key:String,
+    #[serde(rename="pageId")]
+    page_id:u32,
+    currency:String,
+    data:Data
+}
 
-    #[cfg(feature = "signal")]
-    sched.shutdown_on_ctrl_c();
+#[derive(Serialize, Deserialize, Debug)]
+struct Data {
+    #[serde(rename="Rows")]
+    rows:Vec<Row>
+}
 
-    let get_prices_job = sched.add(Job::new_async("1/10 * * * * *", |_uuid, _l| {
-        Box::pin(async move {
-            let prices = get_prices(Some(Local::today())).await;
-            let prices = approve_lowest_prices(prices.unwrap(), 8);
+#[derive(Serialize, Deserialize, Debug)]
+struct Column {
+    #[serde(rename="Name")]
+    name:String,
+    #[serde(rename="Value")]
+    value:String
+}
 
-            let price = get_current_price(&prices);
-
-            match price {
-                Some(price) => {
-                    toggle_switch(price.approved).await;
-                },
-                None => println!("Could not find {} in prices", Local::today())
-            }
-
-            print_graph(prices);
-        })
-    }).unwrap());
-
-    if get_prices_job.is_err() {
-        println!("Error starting get data job");
-        return;
-    }
-
-    let start = sched.start();
-
-    if start.is_err() {
-        println!("Error starting scheduler");
-        return;
-    }
-
-    loop {}
+#[derive(Serialize, Deserialize, Debug)]
+struct Row {
+    #[serde(rename="Name")]
+    name:String,
+    #[serde(rename="StartTime")]
+    start_time:String,
+    #[serde(rename="EndTime")]
+    end_time:String,
+    #[serde(rename="Columns")]
+    columns:Vec<Column>
 }
 
 async fn toggle_switch(on: bool) {
@@ -179,46 +181,44 @@ async fn fetch_json(url: hyper::Uri) -> Result<Root> {
     Ok(serde_json::from_reader(body.reader())?)
 }
 
-#[derive(Debug, Eq, Ord, PartialEq, PartialOrd, Clone)]
-struct Price {
-    from:DateTime<Local>,
-    to:DateTime<Local>,
-    value:i32,
-    approved:bool
-}
+#[tokio::main]
+async fn main() {
+    println!("Aslaks VVB App\n\n");
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Root {
-    #[serde(rename="cacheKey")]
-    cache_key:String,
-    #[serde(rename="pageId")]
-    page_id:u32,
-    currency:String,
-    data:Data
-}
+    let sched = JobScheduler::new().unwrap();
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Data {
-    #[serde(rename="Rows")]
-    rows:Vec<Row>
-}
+    #[cfg(feature = "signal")]
+    sched.shutdown_on_ctrl_c();
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Column {
-    #[serde(rename="Name")]
-    name:String,
-    #[serde(rename="Value")]
-    value:String
-}
+    let get_prices_job = sched.add(Job::new_async("1/10 * * * * *", |_uuid, _l| {
+        Box::pin(async move {
+            let prices = get_prices(Some(Local::today())).await;
+            let prices = approve_lowest_prices(prices.unwrap(), 8);
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Row {
-    #[serde(rename="Name")]
-    name:String,
-    #[serde(rename="StartTime")]
-    start_time:String,
-    #[serde(rename="EndTime")]
-    end_time:String,
-    #[serde(rename="Columns")]
-    columns:Vec<Column>
+            let price = get_current_price(&prices);
+
+            match price {
+                Some(price) => {
+                    toggle_switch(price.approved).await;
+                },
+                None => println!("Could not find {} in prices", Local::today())
+            }
+
+            print_graph(prices);
+        })
+    }).unwrap());
+
+    if get_prices_job.is_err() {
+        println!("Error starting get data job");
+        return;
+    }
+
+    let start = sched.start();
+
+    if start.is_err() {
+        println!("Error starting scheduler");
+        return;
+    }
+
+    loop {}
 }
