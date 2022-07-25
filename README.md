@@ -14,8 +14,9 @@ Based on realtime data from [Nordpool](https://www.nordpoolgroup.com/en/Market-d
 
 ## Setup
 
-1. To get the Nedis smart power plug device `IP`, `ID` and `local key` [Follow this guide](https://github.com/jasonacox/tinytuya)
-2. Fill in `device_ip`, `device_id` and `device_local_key` in `Settings.toml`
+1. Give the Nedis smart power plug a static IP in your DHCP server
+2. To get the Nedis smart power plug device `IP`, `ID` and `local key` [Follow this guide](https://github.com/jasonacox/tinytuya)
+3. Fill in `device_ip`, `device_id` and `device_local_key` in `Settings.toml`
 
 ## Build
 
