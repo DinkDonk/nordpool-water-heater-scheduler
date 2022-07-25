@@ -8,7 +8,6 @@ Based on realtime data from [Nordpool](https://www.nordpoolgroup.com/en/Market-d
 
 ## Requirements
 
-- Raspberry PI
 - [Nedis Smart Power Plug WIFIPO120xxx](https://nedis.no/no-no/product/sikkerhet-personvern/smart-home/strom/550710067/smartlife-smart-plug-wi-fi-ip44-efektmaler-3680-w-jordet-kontakt-type-f-cee-77-30-40-0c-android-ios-gra-hvit) (Thanks for choosing the worst IoT power plug ever made Aslak!)
 - [Gratis](https://github.com/repaper/gratis/tree/master/PlatformWithOS) (EPD fuse needs to be running, and xbm2bin need to be in PATH)
 
