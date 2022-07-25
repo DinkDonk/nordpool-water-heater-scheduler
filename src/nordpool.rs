@@ -3,16 +3,30 @@ use hyper::Client;
 use hyper::body::Buf;
 use serde::{Serialize, Deserialize};
 use chrono::prelude::*;
+use std::error;
+use std::fmt;
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+type Result<T> = std::result::Result<T, Box<dyn error::Error + Send + Sync>>;
 
 #[derive(Debug, Eq, Ord, PartialEq, PartialOrd, Clone)]
 pub struct Price {
     from: DateTime<Local>,
     to: DateTime<Local>,
     pub value: i32,
-    pub approved: bool
+    pub approved: bool,
+    pub active: bool
 }
+
+#[derive(Debug, Clone)]
+struct EmptyVec;
+
+impl fmt::Display for EmptyVec {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "no price found")
+    }
+}
+
+impl error::Error for EmptyVec {}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Root {
@@ -53,12 +67,13 @@ struct Row {
 pub async fn get_prices(date: Option<Date<Local>>) -> Result<Vec<Price>> {
     let mut url = String::from("https://www.nordpoolgroup.com/api/marketdata/page/23?currency=,,,NOK");
 
+    // TODO: "if let" here?
     match date {
         Some(d) => url = format!("{}&endDate={}", url, d.format("%d-%m-%Y")),
         None => ()
     }
 
-    let response = fetch_json(url.parse().unwrap()).await?;
+    let response = fetch_json(url.parse()?).await?;
     let mut prices:Vec<Price> = Vec::new();
 
     response.data.rows.iter()
@@ -68,7 +83,7 @@ pub async fn get_prices(date: Option<Date<Local>>) -> Result<Vec<Price>> {
             "02&nbsp;-&nbsp;03" => true,
             "03&nbsp;-&nbsp;04" => true,
             "04&nbsp;-&nbsp;05" => true,
-            "05&nbsp;-&nbsp;05" => true,
+            "05&nbsp;-&nbsp;06" => true,
             "06&nbsp;-&nbsp;07" => true,
             "07&nbsp;-&nbsp;08" => true,
             "08&nbsp;-&nbsp;09" => true,
@@ -100,11 +115,24 @@ pub async fn get_prices(date: Option<Date<Local>>) -> Result<Vec<Price>> {
                     .parse()
                     .unwrap();
 
+                let from = Local.from_local_datetime(&start_time).unwrap();
+                let to = Local.from_local_datetime(&end_time).unwrap();
+                let now = Local::now();
+
+                let mut active = false;
+                if from.year() == now.year() &&
+                    from.month() == now.month() &&
+                    from.day() == now.day() &&
+                    from.hour() == now.hour() {
+                        active = true;
+                    }
+
                 let price = Price {
-                    from: Local.from_local_datetime(&start_time).unwrap(),
-                    to: Local.from_local_datetime(&end_time).unwrap(),
-                    value: value,
-                    approved: false
+                    from,
+                    to,
+                    value,
+                    approved: false,
+                    active
                 };
 
                 prices.push(price);
@@ -114,7 +142,7 @@ pub async fn get_prices(date: Option<Date<Local>>) -> Result<Vec<Price>> {
     Ok(prices)
 }
 
-pub fn get_current_price(prices: &Vec<Price>) -> Option<&Price> {
+pub fn get_current_price(prices: &Vec<Price>) -> Result<&Price> {
     let now = Local::now();
 
     prices.into_iter().find(|&price| {
@@ -122,7 +150,21 @@ pub fn get_current_price(prices: &Vec<Price>) -> Option<&Price> {
         price.from.month() == now.month() &&
         price.from.day() == now.day() &&
         price.from.hour() == now.hour()
-    })
+    }).ok_or(EmptyVec.into())
+}
+
+pub fn get_min_price(prices: &Vec<Price>) -> i32 {
+    let mut sorted_prices = prices.clone();
+    sorted_prices.sort_by(|a, b| a.value.cmp(&b.value));
+
+    sorted_prices[0].value
+}
+
+pub fn get_max_price(prices: &Vec<Price>) -> i32 {
+    let mut sorted_prices = prices.clone();
+    sorted_prices.sort_by(|a, b| b.value.cmp(&a.value));
+
+    sorted_prices[0].value
 }
 
 pub fn approve_lowest_prices(prices: Vec<Price>, count: usize) -> Vec<Price> {

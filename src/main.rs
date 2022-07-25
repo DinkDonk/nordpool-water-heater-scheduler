@@ -5,29 +5,28 @@ mod nordpool;
 mod display;
 mod wall_socket;
 
-async fn run_job() {
-    let prices = nordpool::get_prices(Some(Local::today())).await;
-    let prices = nordpool::approve_lowest_prices(prices.unwrap(), 8);
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-    let price = nordpool::get_current_price(&prices);
+async fn run_job() -> Result<()> {
+    let prices = nordpool::get_prices(Some(Local::today())).await?;
 
-    match price {
-        Some(price) => {
-            match wall_socket::toggle_switch(price.approved) {
-                Err(e) => println!("{:?}", e),
-                _ => ()
-            }
-        },
-        None => println!("Could not find {} in prices", Local::today())
-    }
+    let prices = nordpool::approve_lowest_prices(prices, 8);
+    let is_price_approved = nordpool::get_current_price(&prices)?.approved;
 
-    // display::print_graph(prices);
+    wall_socket::toggle_switch(is_price_approved)?;
+
+    display::draw(prices);
+
+    Ok(())
 }
 
 #[tokio::main]
 async fn main() {
     // Run job once on start-up
-    run_job().await;
+    match run_job().await {
+        Ok(_) => (),
+        Err(e) => println!("{}", e)
+    }
 
     // Run job every hour
     let sched = JobScheduler::new().unwrap();
@@ -37,7 +36,10 @@ async fn main() {
 
     let get_prices_job = sched.add(Job::new_async("0 0 * * * *", |_uuid, _l| {
         Box::pin(async move {
-            run_job().await;
+            match run_job().await {
+                Ok(_) => (),
+                Err(e) => println!("{}", e)
+            }
         })
     }).unwrap());
 

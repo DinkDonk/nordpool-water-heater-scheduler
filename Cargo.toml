@@ -1,6 +1,6 @@
 [package]
-name = "aslaks-vvb-app"
-version = "0.1.0"
+name = "nordpool-water-heater-scheduler"
+version = "1.0.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -16,3 +16,5 @@ plotlib = "*"
 tokio-cron-scheduler = "0.7"
 rust-tuyapi = "0.8"
 config = "0.13"
+png = "0.17.5"
+image = "0.24.3"
