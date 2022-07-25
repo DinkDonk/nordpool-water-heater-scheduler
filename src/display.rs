@@ -112,18 +112,6 @@ fn draw_row(index:usize, active:bool, price:u32, min_price:u32, max_price:u32, a
     });
 }
 
-fn fill_circle(x:u32, y:u32, color:u8, image:&mut Vec<u8>) {
-    fill(x + 4, y, 5, 1, color, image);
-    fill(x + 2, y + 1, 9, 1, color, image);
-    fill(x + 1, y + 2, 11, 1, color, image);
-    fill(x + 1, y + 3, 11, 1, color, image);
-    fill(x, y + 4, 13, 5, color, image);
-    fill(x + 1, y + 9, 11, 1, color, image);
-    fill(x + 1, y + 10, 11, 1, color, image);
-    fill(x + 2, y + 11, 9, 1, color, image);
-    fill(x + 4, y + 12, 5, 1, color, image);
-}
-
 fn fill(x:u32, y:u32, width:u32, height:u32, color:u8, image:&mut Vec<u8>) {
     let sprite:(usize, usize, &[u8]) = (
         width as usize,
