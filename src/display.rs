@@ -30,7 +30,7 @@ pub fn draw(prices: Vec<Price>) {
 fn convert_to_xbm() {
     let mut process = Command::new("convert")
         .arg("-rotate")
-        .arg("90")
+        .arg("270")
         .arg("display.png")
         .arg("display.xbm")
         .spawn()
